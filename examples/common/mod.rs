@@ -1057,7 +1057,7 @@ fn record_command_buffers(
         )
     };
 
-    renderer.cmd_draw(command_buffer, draw_data)?;
+    renderer.cmd_draw(command_buffer, draw_data, None)?;
 
     unsafe { device.cmd_end_render_pass(command_buffer) };
 

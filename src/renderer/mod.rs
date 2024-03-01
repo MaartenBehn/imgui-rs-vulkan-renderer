@@ -12,6 +12,7 @@ use self::allocator::Allocator;
 
 #[cfg(not(any(feature = "gpu-allocator", feature = "vk-mem")))]
 use ash::Instance;
+use ultraviolet::Mat4;
 
 #[cfg(feature = "gpu-allocator")]
 use {
@@ -42,6 +43,7 @@ pub struct Options {
     /// Note that depth writes are always disabled when enable_depth_test is false.
     /// See <https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VkPipelineDepthStencilStateCreateInfo.html>
     pub enable_depth_write: bool,
+    pub render_3d: bool,
 }
 
 impl Default for Options {
@@ -50,6 +52,7 @@ impl Default for Options {
             in_flight_frames: 1,
             enable_depth_test: false,
             enable_depth_write: false,
+            render_3d: false,
         }
     }
 }
@@ -457,7 +460,10 @@ impl Renderer {
         &mut self,
         command_buffer: vk::CommandBuffer,
         draw_data: &DrawData,
+        matrix: Option<&[f32; 16]>
     ) -> RendererResult<()> {
+        debug_assert!(matrix.is_some() == self.options.render_3d, "When 3d Rendering is set you need to give a transform matrix!");
+
         if draw_data.total_vtx_count == 0 {
             return Ok(());
         }
@@ -493,15 +499,17 @@ impl Renderer {
 
         unsafe { self.device.cmd_set_viewport(command_buffer, 0, &viewports) };
 
-        // Ortho projection
-        let projection = orthographic_vk(
+        // Projection
+        let projection = if matrix.is_none() { orthographic_vk(
             0.0,
             draw_data.display_size[0],
             0.0,
             -draw_data.display_size[1],
             -1.0,
             1.0,
-        );
+        ) } else {
+            Mat4::from(matrix.unwrap())
+        };
         unsafe {
             let push = any_as_u8_slice(&projection);
             self.device.cmd_push_constants(
@@ -545,23 +553,25 @@ impl Renderer {
                                 idx_offset,
                             },
                     } => {
-                        unsafe {
-                            let clip_x = (clip_rect[0] - clip_offset[0]) * clip_scale[0];
-                            let clip_y = (clip_rect[1] - clip_offset[1]) * clip_scale[1];
-                            let clip_w = (clip_rect[2] - clip_offset[0]) * clip_scale[0] - clip_x;
-                            let clip_h = (clip_rect[3] - clip_offset[1]) * clip_scale[1] - clip_y;
+                        if !self.options.render_3d {
+                            unsafe {
+                                let clip_x = (clip_rect[0] - clip_offset[0]) * clip_scale[0];
+                                let clip_y = (clip_rect[1] - clip_offset[1]) * clip_scale[1];
+                                let clip_w = (clip_rect[2] - clip_offset[0]) * clip_scale[0] - clip_x;
+                                let clip_h = (clip_rect[3] - clip_offset[1]) * clip_scale[1] - clip_y;
 
-                            let scissors = [vk::Rect2D {
-                                offset: vk::Offset2D {
-                                    x: (clip_x as i32).max(0),
-                                    y: (clip_y as i32).max(0),
-                                },
-                                extent: vk::Extent2D {
-                                    width: clip_w as _,
-                                    height: clip_h as _,
-                                },
-                            }];
-                            self.device.cmd_set_scissor(command_buffer, 0, &scissors);
+                                let scissors = [vk::Rect2D {
+                                    offset: vk::Offset2D {
+                                        x: (clip_x as i32).max(0),
+                                        y: (clip_y as i32).max(0),
+                                    },
+                                    extent: vk::Extent2D {
+                                        width: clip_w as _,
+                                        height: clip_h as _,
+                                    },
+                                }];
+                                self.device.cmd_set_scissor(command_buffer, 0, &scissors);
+                            }
                         }
 
                         if Some(texture_id) != current_texture_id {
