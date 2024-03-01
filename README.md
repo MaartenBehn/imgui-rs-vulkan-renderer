@@ -11,15 +11,21 @@ A Vulkan renderer for [imgui-rs][imgui-rs] using [Ash][ash].
 
 ## Compatibility
 
-| crate | imgui | ash          | gpu-allocator (feature) | vk-mem (feature)                        |
-|-------|-------|--------------|-------------------------|-----------------------------------------|
-| 1.6.x | 0.9   | [0.34, 0.37] | [0.19, 0.21]            | 0.2.3 ([forked][forked-mem-rs-034-037]) |
-| 1.5.0 | 0.8   | [0.34, 0.37] | 0.19                    | 0.2.3 ([forked][forked-mem-rs-034-037]) |
-| 1.4.0 | 0.8   | [0.34, 0.37] | 0.18                    | 0.2.3 ([forked][forked-mem-rs-034-037]) |
-| 1.3.0 | 0.8   | [0.34, 0.37] | 0.18                    | 0.2.3 ([forked][forked-mem-rs-034-037]) |
-| 1.2.0 | 0.8   | 0.36         | 0.17                    | 0.2.3 ([forked][forked-mem-rs-036])     |
-| 1.1.x | 0.8   | 0.35         | 0.15                    | 0.2.3 ([forked][forked-mem-rs-035])     |
-| 1.0.0 | 0.8   | 0.35         | 0.14                    | 0.2.3 ([forked][forked-mem-rs-035])     |
+| crate  | imgui | ash          | gpu-allocator (feature) | vk-mem (feature)                        |
+|--------|-------|--------------|-------------------------|-----------------------------------------|
+| 1.12.0 | 0.11  | [0.34, 0.37] | 0.25                    | 0.3.0                                   |
+| 1.11.0 | 0.11  | [0.34, 0.37] | 0.25                    | 0.2.3 ([forked][forked-mem-rs-034-037]) |
+| 1.10.0 | 0.11  | [0.34, 0.37] | 0.23                    | 0.2.3 ([forked][forked-mem-rs-034-037]) |
+| 1.9.0  | 0.11  | [0.34, 0.37] | 0.22                    | 0.2.3 ([forked][forked-mem-rs-034-037]) |
+| 1.8.0  | 0.10  | [0.34, 0.37] | 0.22                    | 0.2.3 ([forked][forked-mem-rs-034-037]) |
+| 1.7.0  | 0.10  | [0.34, 0.37] | [0.19, 0.21]            | 0.2.3 ([forked][forked-mem-rs-034-037]) |
+| 1.6.x  | 0.9   | [0.34, 0.37] | [0.19, 0.21]            | 0.2.3 ([forked][forked-mem-rs-034-037]) |
+| 1.5.0  | 0.8   | [0.34, 0.37] | 0.19                    | 0.2.3 ([forked][forked-mem-rs-034-037]) |
+| 1.4.0  | 0.8   | [0.34, 0.37] | 0.18                    | 0.2.3 ([forked][forked-mem-rs-034-037]) |
+| 1.3.0  | 0.8   | [0.34, 0.37] | 0.18                    | 0.2.3 ([forked][forked-mem-rs-034-037]) |
+| 1.2.0  | 0.8   | 0.36         | 0.17                    | 0.2.3 ([forked][forked-mem-rs-036])     |
+| 1.1.x  | 0.8   | 0.35         | 0.15                    | 0.2.3 ([forked][forked-mem-rs-035])     |
+| 1.0.0  | 0.8   | 0.35         | 0.14                    | 0.2.3 ([forked][forked-mem-rs-035])     |
 
 ## How it works
 
@@ -59,14 +65,6 @@ a `Arc<Mutex<gpu_allocator::vulkan::Allocator>>`. All internal allocator are the
 
 This feature adds support for [vk-mem-rs][vk-mem-rs]. It adds `Renderer::with_vk_mem_allocator` which takes
 a `Arc<Mutex<vk_mem::Allocator>>`. All internal allocator are then done using the allocator.
-
-Since we cannot publish a crate with patched dependencies you'll need to patch it on your end by adding this to your
-Cargo.toml file
-
-```toml
-[patch.crates-io]
-vk-mem = { git = "https://github.com/adrien-ben/vk-mem-rs", tag = "0.2.3-ash-0.34-0.37" }
-```
 
 > I'm still not sure with the `Arc<Mutex<...>>` stuff. It works for me but i'm unsure it'a the best way to go.
 > Any suggestion is welcome.

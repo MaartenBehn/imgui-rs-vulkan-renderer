@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.12.0
+
+- Bump vk-mem to 0.3.0
+
+## 1.11.0
+
+- Bump gpu-allocator to 0.25 by @nice-sprite in #38
+
+## 1.10.0
+
+- Bump gpu-allocator to 0.23
+
+## 1.9.0
+
+- Bump imgui to 0.11
+
+## 1.8.0
+
+- Bump gpu-allocator to 0.22
+
+## 1.7.0
+
+- Bump imgui to 0.10
+
 ## 1.6.1
 
 - Avoid passing negative values to `cmd_set_scissor`

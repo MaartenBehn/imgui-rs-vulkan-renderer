@@ -299,7 +299,6 @@ mod buffer {
     };
     use ash::vk;
     use ash::Device;
-    use std::mem;
 
     pub fn create_and_fill_buffer<T>(
         device: &Device,
@@ -310,9 +309,9 @@ mod buffer {
     where
         T: Copy,
     {
-        let size = data.len() * mem::size_of::<T>();
-        let (buffer, memory) = allocator.create_buffer(device, size, usage)?;
-        allocator.update_buffer(device, &memory, data)?;
+        let size = std::mem::size_of_val(data);
+        let (buffer, mut memory) = allocator.create_buffer(device, size, usage)?;
+        allocator.update_buffer(device, &mut memory, data)?;
         Ok((buffer, memory))
     }
 }

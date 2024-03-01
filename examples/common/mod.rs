@@ -144,6 +144,7 @@ impl<A: App> System<A> {
                 physical_device: vulkan_context.physical_device,
                 debug_settings: Default::default(),
                 buffer_device_address: false,
+                allocation_sizes: Default::default(),
             })?;
 
             Renderer::with_gpu_allocator(
@@ -166,7 +167,7 @@ impl<A: App> System<A> {
                 let allocator_create_info = AllocatorCreateInfo::new(
                     &vulkan_context.instance,
                     &vulkan_context.device,
-                    &vulkan_context.physical_device,
+                    vulkan_context.physical_device,
                 )
                 .vulkan_api_version(vk::make_api_version(0, 1, 0, 0));
 
