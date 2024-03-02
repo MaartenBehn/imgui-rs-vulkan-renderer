@@ -12,7 +12,6 @@ use self::allocator::Allocator;
 
 #[cfg(not(any(feature = "gpu-allocator", feature = "vk-mem")))]
 use ash::Instance;
-use ultraviolet::Mat4;
 
 #[cfg(feature = "gpu-allocator")]
 use {
@@ -43,7 +42,6 @@ pub struct Options {
     /// Note that depth writes are always disabled when enable_depth_test is false.
     /// See <https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VkPipelineDepthStencilStateCreateInfo.html>
     pub enable_depth_write: bool,
-    pub render_3d: bool,
 }
 
 impl Default for Options {
@@ -52,7 +50,6 @@ impl Default for Options {
             in_flight_frames: 1,
             enable_depth_test: false,
             enable_depth_write: false,
-            render_3d: false,
         }
     }
 }
@@ -460,11 +457,7 @@ impl Renderer {
         &mut self,
         command_buffer: vk::CommandBuffer,
         draw_data: &DrawData,
-        extent: vk::Extent2D,
-        matrix: Option<&[f32; 16]>
     ) -> RendererResult<()> {
-        debug_assert!(matrix.is_some() == self.options.render_3d, "When 3d Rendering is set you need to give a transform matrix!");
-
         if draw_data.total_vtx_count == 0 {
             return Ok(());
         }
@@ -473,13 +466,13 @@ impl Renderer {
             self.frames.replace(Frames::new(
                 &self.device,
                 &mut self.allocator,
-                draw_data,
+                &[draw_data],
                 self.options.in_flight_frames,
             )?);
         }
 
         let mesh = self.frames.as_mut().unwrap().next();
-        mesh.update(&self.device, &mut self.allocator, draw_data)?;
+        mesh.update(&self.device, &mut self.allocator, &[draw_data])?;
 
         unsafe {
             self.device.cmd_bind_pipeline(
@@ -489,39 +482,25 @@ impl Renderer {
             )
         };
 
-        if !self.options.render_3d {
-            let framebuffer_width = draw_data.framebuffer_scale[0] * draw_data.display_size[0];
-            let framebuffer_height = draw_data.framebuffer_scale[1] * draw_data.display_size[1];
-            let viewports = [vk::Viewport {
-                width: framebuffer_width,
-                height: framebuffer_height,
-                max_depth: 1.0,
-                ..Default::default()
-            }];
-            unsafe { self.device.cmd_set_viewport(command_buffer, 0, &viewports) };
-        } else {
-            let framebuffer_width = draw_data.framebuffer_scale[0] * extent.width as f32;
-            let framebuffer_height = draw_data.framebuffer_scale[1] * extent.height as f32;
-            let viewports = [vk::Viewport {
-                width: framebuffer_width,
-                height: framebuffer_height,
-                max_depth: 1.0,
-                ..Default::default()
-            }];
-            unsafe { self.device.cmd_set_viewport(command_buffer, 0, &viewports) };
-        }
-        
+        let framebuffer_width = draw_data.framebuffer_scale[0] * draw_data.display_size[0];
+        let framebuffer_height = draw_data.framebuffer_scale[1] * draw_data.display_size[1];
+        let viewports = [vk::Viewport {
+            width: framebuffer_width,
+            height: framebuffer_height,
+            max_depth: 1.0,
+            ..Default::default()
+        }];
+        unsafe { self.device.cmd_set_viewport(command_buffer, 0, &viewports) };
+
         // Projection
-        let projection = if matrix.is_none() { orthographic_vk(
+        let projection = orthographic_vk(
             0.0,
             draw_data.display_size[0],
             0.0,
             -draw_data.display_size[1],
             -1.0,
             1.0,
-        ) } else {
-            Mat4::from(matrix.unwrap())
-        };
+        );
         unsafe {
             let push = any_as_u8_slice(&projection);
             self.device.cmd_push_constants(
@@ -565,25 +544,25 @@ impl Renderer {
                                 idx_offset,
                             },
                     } => {
-                        if !self.options.render_3d {
-                            unsafe {
-                                let clip_x = (clip_rect[0] - clip_offset[0]) * clip_scale[0];
-                                let clip_y = (clip_rect[1] - clip_offset[1]) * clip_scale[1];
-                                let clip_w = (clip_rect[2] - clip_offset[0]) * clip_scale[0] - clip_x;
-                                let clip_h = (clip_rect[3] - clip_offset[1]) * clip_scale[1] - clip_y;
+                        unsafe {
+                            let clip_x = (clip_rect[0] - clip_offset[0]) * clip_scale[0];
+                            let clip_y = (clip_rect[1] - clip_offset[1]) * clip_scale[1];
+                            let clip_w =
+                                (clip_rect[2] - clip_offset[0]) * clip_scale[0] - clip_x;
+                            let clip_h =
+                                (clip_rect[3] - clip_offset[1]) * clip_scale[1] - clip_y;
 
-                                let scissors = [vk::Rect2D {
-                                    offset: vk::Offset2D {
-                                        x: (clip_x as i32).max(0),
-                                        y: (clip_y as i32).max(0),
-                                    },
-                                    extent: vk::Extent2D {
-                                        width: clip_w as _,
-                                        height: clip_h as _,
-                                    },
-                                }];
-                                self.device.cmd_set_scissor(command_buffer, 0, &scissors);
-                            }
+                            let scissors = [vk::Rect2D {
+                                offset: vk::Offset2D {
+                                    x: (clip_x as i32).max(0),
+                                    y: (clip_y as i32).max(0),
+                                },
+                                extent: vk::Extent2D {
+                                    width: clip_w as _,
+                                    height: clip_h as _,
+                                },
+                            }];
+                            self.device.cmd_set_scissor(command_buffer, 0, &scissors);
                         }
 
                         if Some(texture_id) != current_texture_id {
@@ -627,6 +606,142 @@ impl Renderer {
 
         Ok(())
     }
+
+
+    /// Record commands required to render the gui.RendererError.
+    ///
+    /// # Arguments
+    ///
+    /// * `command_buffer` - The Vulkan command buffer that command will be recorded to.
+    /// * `draw_data` - A reference to the imgui `DrawData` containing rendering data.
+    ///
+    /// # Errors
+    ///
+    /// * [`RendererError`] - If any Vulkan error is encountered during command recording.
+    pub fn cmd_draw_3d(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        draw_datas: &[&DrawData],
+        mats: &[[f32; 16]],
+        extent: vk::Extent2D,
+    ) -> RendererResult<()> {
+
+        if self.frames.is_none() {
+            self.frames.replace(Frames::new(
+                &self.device,
+                &mut self.allocator,
+                draw_datas,
+                self.options.in_flight_frames,
+            )?);
+        }
+
+        let mesh = self.frames.as_mut().unwrap().next();
+        mesh.update(&self.device, &mut self.allocator, draw_datas)?;
+
+        unsafe {
+            self.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline,
+            )
+        };
+
+        let framebuffer_width = extent.width as f32;
+        let framebuffer_height = extent.height as f32;
+        let viewports = [vk::Viewport {
+            width: framebuffer_width,
+            height: framebuffer_height,
+            max_depth: 1.0,
+            ..Default::default()
+        }];
+        unsafe { self.device.cmd_set_viewport(command_buffer, 0, &viewports) };
+
+        unsafe {
+            self.device.cmd_bind_index_buffer(
+                command_buffer,
+                mesh.indices,
+                0,
+                vk::IndexType::UINT16,
+            )
+        };
+
+        unsafe {
+            self.device
+                .cmd_bind_vertex_buffers(command_buffer, 0, &[mesh.vertices], &[0])
+        };
+
+        let mut index_offset = 0;
+        let mut vertex_offset = 0;
+        for (i, draw_data) in draw_datas.iter().enumerate() {
+            unsafe {
+                let push = any_as_u8_slice(&mats[i]);
+                self.device.cmd_push_constants(
+                    command_buffer,
+                    self.pipeline_layout,
+                    vk::ShaderStageFlags::VERTEX,
+                    0,
+                    push,
+                )
+            };
+
+            let mut current_texture_id: Option<TextureId> = None;
+            for draw_list in draw_data.draw_lists() {
+                for command in draw_list.commands() {
+                    match command {
+                        DrawCmd::Elements {
+                            count,
+                            cmd_params:
+                            DrawCmdParams {
+                                clip_rect: _,
+                                texture_id,
+                                vtx_offset,
+                                idx_offset,
+                            },
+                        } => {
+                            if Some(texture_id) != current_texture_id {
+                                let descriptor_set = self.lookup_descriptor_set(texture_id)?;
+                                unsafe {
+                                    self.device.cmd_bind_descriptor_sets(
+                                        command_buffer,
+                                        vk::PipelineBindPoint::GRAPHICS,
+                                        self.pipeline_layout,
+                                        0,
+                                        &[descriptor_set],
+                                        &[],
+                                    )
+                                };
+                                current_texture_id = Some(texture_id);
+                            }
+
+                            unsafe {
+                                self.device.cmd_draw_indexed(
+                                    command_buffer,
+                                    count as _,
+                                    1,
+                                    index_offset + idx_offset as u32,
+                                    vertex_offset + vtx_offset as i32,
+                                    0,
+                                )
+                            };
+                        }
+                        DrawCmd::ResetRenderState => {
+                            log::trace!("Reset render state command not yet supported")
+                        }
+                        DrawCmd::RawCallback { .. } => {
+                            log::trace!("Raw callback command not yet supported")
+                        }
+                    }
+                }
+
+                index_offset += draw_list.idx_buffer().len() as u32;
+                vertex_offset += draw_list.vtx_buffer().len() as i32;
+            }
+        }
+
+
+
+        Ok(())
+    }
 }
 
 impl Drop for Renderer {
@@ -664,11 +779,11 @@ impl Frames {
     fn new(
         device: &Device,
         allocator: &mut Allocator,
-        draw_data: &DrawData,
+        draw_datas: &[&DrawData],
         count: usize,
     ) -> RendererResult<Self> {
         let meshes = (0..count)
-            .map(|_| Mesh::new(device, allocator, draw_data))
+            .map(|_| Mesh::new(device, allocator, draw_datas))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             index: 0,
@@ -714,12 +829,19 @@ mod mesh {
         pub fn new(
             device: &Device,
             allocator: &mut Allocator,
-            draw_data: &DrawData,
+            draw_datas: &[&DrawData],
         ) -> RendererResult<Self> {
-            let vertices = create_vertices(draw_data);
-            let vertex_count = vertices.len();
-            let indices = create_indices(draw_data);
-            let index_count = indices.len();
+            let mut vertices = Vec::new();
+            let mut vertex_count = 0;
+            let mut indices = Vec::new();
+            let mut index_count = 0;
+
+            for draw_data in draw_datas {
+                vertices.append(&mut create_vertices(draw_data));
+                vertex_count += vertices.len();
+                indices.append(&mut create_indices(draw_data));
+                index_count += indices.len();
+            }
 
             // Create a vertex buffer
             let (vertices, vertices_mem) = create_and_fill_buffer(
@@ -751,13 +873,23 @@ mod mesh {
             &mut self,
             device: &Device,
             allocator: &mut Allocator,
-            draw_data: &DrawData,
+            draw_datas: &[&DrawData],
         ) -> RendererResult<()> {
-            let vertices = create_vertices(draw_data);
-            if draw_data.total_vtx_count as usize > self.vertex_count {
+            let mut vertices = Vec::new();
+            let mut vertex_count = 0;
+            let mut indices = Vec::new();
+            let mut index_count = 0;
+
+            for draw_data in draw_datas {
+                vertices.append(&mut create_vertices(draw_data));
+                vertex_count += vertices.len();
+                indices.append(&mut create_indices(draw_data));
+                index_count += indices.len();
+            }
+
+            if vertex_count > self.vertex_count {
                 log::trace!("Resizing vertex buffers");
 
-                let vertex_count = vertices.len();
                 let size = vertex_count * size_of::<DrawVert>();
                 let (vertices, vertices_mem) =
                     allocator.create_buffer(device, size, vk::BufferUsageFlags::VERTEX_BUFFER)?;
@@ -773,11 +905,10 @@ mod mesh {
             }
             allocator.update_buffer(device, &mut self.vertices_mem, &vertices)?;
 
-            let indices = create_indices(draw_data);
-            if draw_data.total_idx_count as usize > self.index_count {
+
+            if index_count > self.index_count {
                 log::trace!("Resizing index buffers");
 
-                let index_count = indices.len();
                 let size = index_count * size_of::<u16>();
                 let (indices, indices_mem) =
                     allocator.create_buffer(device, size, vk::BufferUsageFlags::INDEX_BUFFER)?;
