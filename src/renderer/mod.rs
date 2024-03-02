@@ -460,6 +460,7 @@ impl Renderer {
         &mut self,
         command_buffer: vk::CommandBuffer,
         draw_data: &DrawData,
+        extent: vk::Extent2D,
         matrix: Option<&[f32; 16]>
     ) -> RendererResult<()> {
         debug_assert!(matrix.is_some() == self.options.render_3d, "When 3d Rendering is set you need to give a transform matrix!");
@@ -488,17 +489,28 @@ impl Renderer {
             )
         };
 
-        let framebuffer_width = draw_data.framebuffer_scale[0] * draw_data.display_size[0];
-        let framebuffer_height = draw_data.framebuffer_scale[1] * draw_data.display_size[1];
-        let viewports = [vk::Viewport {
-            width: framebuffer_width,
-            height: framebuffer_height,
-            max_depth: 1.0,
-            ..Default::default()
-        }];
-
-        unsafe { self.device.cmd_set_viewport(command_buffer, 0, &viewports) };
-
+        if !self.options.render_3d {
+            let framebuffer_width = draw_data.framebuffer_scale[0] * draw_data.display_size[0];
+            let framebuffer_height = draw_data.framebuffer_scale[1] * draw_data.display_size[1];
+            let viewports = [vk::Viewport {
+                width: framebuffer_width,
+                height: framebuffer_height,
+                max_depth: 1.0,
+                ..Default::default()
+            }];
+            unsafe { self.device.cmd_set_viewport(command_buffer, 0, &viewports) };
+        } else {
+            let framebuffer_width = draw_data.framebuffer_scale[0] * extent.width as f32;
+            let framebuffer_height = draw_data.framebuffer_scale[1] * extent.height as f32;
+            let viewports = [vk::Viewport {
+                width: framebuffer_width,
+                height: framebuffer_height,
+                max_depth: 1.0,
+                ..Default::default()
+            }];
+            unsafe { self.device.cmd_set_viewport(command_buffer, 0, &viewports) };
+        }
+        
         // Projection
         let projection = if matrix.is_none() { orthographic_vk(
             0.0,
