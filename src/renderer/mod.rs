@@ -12,6 +12,7 @@ use self::allocator::Allocator;
 
 #[cfg(not(any(feature = "gpu-allocator", feature = "vk-mem")))]
 use ash::Instance;
+use ultraviolet::{Mat4, Vec3};
 
 #[cfg(feature = "gpu-allocator")]
 use {
@@ -673,17 +674,9 @@ impl Renderer {
         let mut index_offset = 0;
         let mut vertex_offset = 0;
         for (i, draw_data) in draw_datas.iter().enumerate() {
-            unsafe {
-                let push = any_as_u8_slice(&mats[i]);
-                self.device.cmd_push_constants(
-                    command_buffer,
-                    self.pipeline_layout,
-                    vk::ShaderStageFlags::VERTEX,
-                    0,
-                    push,
-                )
-            };
+            let mat = Mat4::from(mats[i]);
 
+            let mut draw_counter = 1;
             let mut current_texture_id: Option<TextureId> = None;
             for draw_list in draw_data.draw_lists() {
                 for command in draw_list.commands() {
@@ -713,6 +706,19 @@ impl Renderer {
                                 current_texture_id = Some(texture_id);
                             }
 
+                            let z_moved_mat = mat * Mat4::from_translation(Vec3::new(0.0, 0.0, 0.01 * draw_counter as f32));
+
+                            unsafe {
+                                let push = any_as_u8_slice(&z_moved_mat);
+                                self.device.cmd_push_constants(
+                                    command_buffer,
+                                    self.pipeline_layout,
+                                    vk::ShaderStageFlags::VERTEX,
+                                    0,
+                                    push,
+                                )
+                            };
+
                             unsafe {
                                 self.device.cmd_draw_indexed(
                                     command_buffer,
@@ -723,6 +729,8 @@ impl Renderer {
                                     0,
                                 )
                             };
+
+                            draw_counter += 1;
                         }
                         DrawCmd::ResetRenderState => {
                             log::trace!("Reset render state command not yet supported")
@@ -831,17 +839,9 @@ mod mesh {
             allocator: &mut Allocator,
             draw_datas: &[&DrawData],
         ) -> RendererResult<Self> {
-            let mut vertices = Vec::new();
-            let mut vertex_count = 0;
-            let mut indices = Vec::new();
-            let mut index_count = 0;
-
-            for draw_data in draw_datas {
-                vertices.append(&mut create_vertices(draw_data));
-                vertex_count += vertices.len();
-                indices.append(&mut create_indices(draw_data));
-                index_count += indices.len();
-            }
+            let (vertices, indices) = create_vertices_and_indecies(draw_datas);
+            let vertex_count = vertices.len();
+            let index_count = indices.len();
 
             // Create a vertex buffer
             let (vertices, vertices_mem) = create_and_fill_buffer(
@@ -875,17 +875,10 @@ mod mesh {
             allocator: &mut Allocator,
             draw_datas: &[&DrawData],
         ) -> RendererResult<()> {
-            let mut vertices = Vec::new();
-            let mut vertex_count = 0;
-            let mut indices = Vec::new();
-            let mut index_count = 0;
+            let (vertices, indices) = create_vertices_and_indecies(draw_datas);
+            let vertex_count = vertices.len();
+            let index_count = indices.len();
 
-            for draw_data in draw_datas {
-                vertices.append(&mut create_vertices(draw_data));
-                vertex_count += vertices.len();
-                indices.append(&mut create_indices(draw_data));
-                index_count += indices.len();
-            }
 
             if vertex_count > self.vertex_count {
                 log::trace!("Resizing vertex buffers");
@@ -904,7 +897,6 @@ mod mesh {
                 allocator.destroy_buffer(device, old_vertices, old_vertices_mem)?;
             }
             allocator.update_buffer(device, &mut self.vertices_mem, &vertices)?;
-
 
             if index_count > self.index_count {
                 log::trace!("Resizing index buffers");
@@ -934,21 +926,18 @@ mod mesh {
         }
     }
 
-    fn create_vertices(draw_data: &DrawData) -> Vec<DrawVert> {
-        let vertex_count = draw_data.total_vtx_count as usize;
-        let mut vertices = Vec::with_capacity(vertex_count);
-        for draw_list in draw_data.draw_lists() {
-            vertices.extend_from_slice(draw_list.vtx_buffer());
-        }
-        vertices
-    }
+    fn create_vertices_and_indecies(draw_datas: &[&DrawData]) -> (Vec<DrawVert>, Vec<u16>) {
+        let (vertex_count, index_count) = draw_datas.iter().fold((0, 0), |(v, i), d| (v + d.total_vtx_count as usize, i + d.total_idx_count as usize));
 
-    fn create_indices(draw_data: &DrawData) -> Vec<u16> {
-        let index_count = draw_data.total_idx_count as usize;
+        let mut vertices = Vec::with_capacity(vertex_count);
         let mut indices = Vec::with_capacity(index_count);
-        for draw_list in draw_data.draw_lists() {
-            indices.extend_from_slice(draw_list.idx_buffer());
+        for draw_data in draw_datas {
+            for draw_list in draw_data.draw_lists() {
+                vertices.extend_from_slice(draw_list.vtx_buffer());
+                indices.extend_from_slice(draw_list.idx_buffer());
+            }
         }
-        indices
+
+        (vertices, indices)
     }
 }

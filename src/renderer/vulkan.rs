@@ -173,7 +173,7 @@ pub(crate) fn create_vulkan_pipeline(
     let depth_stencil_state_create_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(options.enable_depth_test)
         .depth_write_enable(options.enable_depth_write)
-        .depth_compare_op(vk::CompareOp::ALWAYS)
+        .depth_compare_op(vk::CompareOp::LESS)
         .depth_bounds_test_enable(false)
         .stencil_test_enable(false)
         .build();
