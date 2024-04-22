@@ -624,7 +624,7 @@ impl Renderer {
         command_buffer: vk::CommandBuffer,
         draw_datas: &[&DrawData],
         mats: &[[f32; 16]],
-        extent: vk::Extent2D,
+        view_port_size: &[f32],
     ) -> RendererResult<()> {
 
         if self.frames.is_none() {
@@ -647,11 +647,9 @@ impl Renderer {
             )
         };
 
-        let framebuffer_width = extent.width as f32;
-        let framebuffer_height = extent.height as f32;
         let viewports = [vk::Viewport {
-            width: framebuffer_width,
-            height: framebuffer_height,
+            width: view_port_size[0],
+            height: view_port_size[1],
             max_depth: 1.0,
             ..Default::default()
         }];
